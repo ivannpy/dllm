@@ -61,13 +61,40 @@ def get_model(
         "attn_implementation": attn_implementation,
         "config": config,
     }
+    
+    ##########################################################################
+    #try:
+    #    model = transformers.AutoModelForMaskedLM.from_pretrained(
+    #        model_name_or_path, **params
+    #    )
+    #except Exception:
+    #    model = transformers.AutoModel.from_pretrained(model_name_or_path, **params)
+    ##########################################################################
 
-    try:
+    # Get architecture from config.json
+    auto_config = transformers.AutoConfig.from_pretrained(model_name_or_path)
+    architectures = getattr(auto_config, "architectures", []) or []
+
+    if any("ForMaskedLM" in a for a in architectures):
         model = transformers.AutoModelForMaskedLM.from_pretrained(
             model_name_or_path, **params
         )
-    except Exception:
-        model = transformers.AutoModel.from_pretrained(model_name_or_path, **params)
+    elif any("ForCausalLM" in a for a in architectures):
+        model = transformers.AutoModelForCausalLM.from_pretrained(
+            model_name_or_path, **params
+        )
+    else:
+        # Fallback in order
+        for AutoClass in [
+            transformers.AutoModelForMaskedLM,
+            transformers.AutoModelForCausalLM,
+            transformers.AutoModel,
+        ]:
+            try:
+                model = AutoClass.from_pretrained(model_name_or_path, **params)
+                break
+            except Exception:
+                continue
 
     # --- if quantized, prepare for LoRA / QLoRA training ---
     if load_in_4bit and quant_config is not None:
@@ -109,6 +136,8 @@ def get_tokenizer(
     from dllm.pipelines.llada21.models import modeling_llada21_moe as llada21_moe_mod
     from dllm.pipelines.llada.models.modeling_llada import LLaDAModelLM
     from dllm.pipelines.llada.models.modeling_lladamoe import LLaDAMoEModelLM
+
+    from transformers.models.qwen3.modeling_qwen3 import Qwen3PreTrainedModel
 
     model_args = model_args or ModelArguments()
     model_name_or_path = kwargs.get(
@@ -222,6 +251,24 @@ def get_tokenizer(
                 return _orig_apply_chat_template(*args, **kwargs)
 
         tokenizer.apply_chat_template = _apply_chat_template
+    elif issubclass(model_cls, Qwen3PreTrainedModel):
+        # Qwen2/Qwen3 base (for A2D conversion)
+        tokenizer.add_special_tokens({"mask_token": "<|mask|>"})
+        tokenizer.eot_token = "<|im_end|>"
+        tokenizer.eot_token_id = tokenizer.convert_tokens_to_ids(tokenizer.eot_token)
+        _orig_apply_chat_template = tokenizer.apply_chat_template
+
+        def _apply_chat_template(*args, **kwargs):
+            if "enable_thinking" not in kwargs:
+                kwargs["enable_thinking"] = False
+            try:
+                return _orig_apply_chat_template(*args, **kwargs)
+            except TypeError:
+                kwargs.pop("enable_thinking", None)
+                return _orig_apply_chat_template(*args, **kwargs)
+
+        tokenizer.apply_chat_template = _apply_chat_template
+
     else:
         print_main("no tokenizer customization for model class:", model_cls)
     return tokenizer
