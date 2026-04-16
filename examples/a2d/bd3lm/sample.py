@@ -38,6 +38,10 @@ transformers.set_seed(script_args.seed)
 # Load model & tokenizer
 model = dllm.utils.get_model(model_args=script_args).eval()
 tokenizer = dllm.utils.get_tokenizer(model_args=script_args)
+
+if len(tokenizer) != model.get_input_embeddings().weight.shape[0]:
+        model.resize_token_embeddings(len(tokenizer))
+
 sampler = dllm.core.samplers.BD3LMSampler(model=model, tokenizer=tokenizer)
 terminal_visualizer = dllm.utils.TerminalVisualizer(tokenizer=tokenizer)
 

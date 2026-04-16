@@ -46,6 +46,10 @@ def main():
 
     model = dllm.utils.get_model(model_args=script_args).eval()
     tokenizer = dllm.utils.get_tokenizer(model_args=script_args)
+    
+    if len(tokenizer) != model.get_input_embeddings().weight.shape[0]:
+        model.resize_token_embeddings(len(tokenizer))
+
     sampler = dllm.core.samplers.BD3LMSampler(model=model, tokenizer=tokenizer)
 
     if script_args.chat_template:

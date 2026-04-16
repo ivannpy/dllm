@@ -80,6 +80,10 @@ def train():
     # ----- Tokenizer --------------------------------------------------------------
     tokenizer = dllm.utils.get_tokenizer(model_args=model_args)
 
+    if len(tokenizer) != model.get_input_embeddings().weight.shape[0]:
+        model.resize_token_embeddings(len(tokenizer))
+        logger.info(f"resize_token_embeddings: {len(tokenizer)} tokens")
+
     # ----- Dataset ----------------------------------------------------------------
     with accelerate.PartialState().local_main_process_first():
         dataset = dllm.data.load_sft_dataset(
